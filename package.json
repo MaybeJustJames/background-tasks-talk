@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "reveal-md --title "Background task execution" --static _slides talk.md",
+    "build": "reveal-md --title \"Background task execution\" --static _slides talk.md",
     "start": "reveal-md talk.md -w"
   },
   "author": "James Collier <james.collier@vib.be>",

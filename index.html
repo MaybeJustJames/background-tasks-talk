@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+    <title>Background task execution</title>
+    <link rel="shortcut icon" href="./favicon.ico" />
+    <link rel="stylesheet" href="./dist/reset.css" />
+    <link rel="stylesheet" href="./dist/reveal.css" />
+    <link rel="stylesheet" href="./dist/theme/black.css" id="theme" />
+    <link rel="stylesheet" href="./css/highlight/base16/zenburn.css" />
+
+
+  </head>
+  <body>
+    <div class="reveal">
+      <div class="slides"><section  data-markdown><script type="text/template"># Which to ski?
+#### A software architecture dilemma
+![Mountains](Nature.jpg)
+
+<aside class="notes"><p>Today I want to take you on a tour of these slopes. And by the end you will have no idea
+which one to ski.</p>
+</aside></script></section><section  data-markdown><script type="text/template">
+![Brace yourselves](brace-yourself.jpg)
+
+<aside class="notes"><p>First I&#39;m going to tell you how to ski, then I&#39;ll describe what you might
+want from a good ski slope, then I&#39;ll tell you about the available slopes,
+and finally put you to task and push you off.</p>
+</aside></script></section><section  data-markdown><script type="text/template">
+In an _event-driven_ application, there is generally a _main loop_ that listens for events and calls
+a handler function when an event is detected.
+
+```rust
+loop {
+    let event = listen();
+    match (event.name) {
+        "Lunch time" => wake_up(),
+        "Team meeting" => be_late(),
+        "Call from Alex" => pretend_to_work(),
+        _ => relax(),
+    }
+}
+```
+
+<aside class="notes"><p>Here is a simplified program encoding me. Or my main event loop. All my time is spent relaxing
+and waiting for events. When I &quot;hear&quot; an event I react to it (or &quot;handle&quot; it) then I go back
+to listening and relaxing.</p>
+</aside></script></section><section  data-markdown><script type="text/template">
+# Examples
+
+* A web server / service
+
+* Any GUI application (e.g. Android apps)
+
+* Device drivers
+
+* Browser applications
+
+<aside class="notes"><p>Many real programs that we might be interested in are event driven.</p>
+</aside></script></section><section  data-markdown><script type="text/template">
+## "Background" tasks?
+
+Everything I've talked about so far are "foreground" tasks.
+
+A "background" task is any computation that happens independent of
+the _main (event) loop_.
+
+<aside class="notes"><p>I&#39;m sure you&#39;re already aware of what a background task is, I just want to draw a complete picture.
+From the perspective of the <em>main loop</em> any task not handling an event is a background task.
+Background tasks necessarily run concurrently with the main loop.</p>
+</aside></script></section><section  data-markdown><script type="text/template">
+# Examples
+
+* Processing large CSV files in a web browser
+
+* Checking if the contents of a form field are valid PDBIDs in an Android application
+
+* Computing protein tertiary structure from sequence in a web service
+</script></section><section  data-markdown><script type="text/template">
+# Why?
+
+Executing long-running computations in the "foreground" can cause problems...
+
+```python
+def mouse_driver():
+    event = listen()
+    if event == "move_cursor":
+        mine_cryptocurrency()
+        send_move_event_to_os()
+    elif: ...
+```
+
+<aside class="notes"><p>To take a visceral example. Imagine a mouse driver that does a little crypto mining on every mouse
+event it receives from the hardware. This might result in a jittery mouse using experience followed
+rapidly by a broken mouse, tears, screaming,...</p>
+</aside></script></section><section  data-markdown><script type="text/template">
+# When?
+
+The problem is that many interesting computations we might want to perform take time.
+
+![Foreground tasks](https://devcenter1.assets.heroku.com/article-images/310-imported-1443570180-Screen-20shot-202012-04-12-20at-202.49.38-20PM.png)
+
+Often more time than we can allow.
+</script></section><section  data-markdown><script type="text/template">
+So we need a way to push these computations to the
+"background" while we continue to get on with the latency sensitive work of the main
+loop in the "foreground".
+
+![Background tasks](https://devcenter0.assets.heroku.com/article-images/310-imported-1443570182-Screen-20shot-202012-04-12-20at-203.59.12-20PM.png)
+
+<aside class="notes"><p>A &quot;background&quot; task processing service is responsible for carrying out work scheduled
+by the web service. Once it has finished a work item it can persist the results and
+move onto the next one (or wait until another work item is available).</p>
+<p>Depending on requirements and design, this idea can scale from device drivers to compute grids.</p>
+</aside></script></section><section  data-markdown><script type="text/template">
+## Types of background work
+
+<aside class="notes"><p>It&#39;s useful to distinguish 3 schedules for background work.</p>
+</aside></script></section><section  data-markdown><script type="text/template">
+* Stuff that has to happen _**now**_!
+
+![Do it](https://cdn-images-1.medium.com/max/1600/1*2rK6gBMkTSyTEYZ6YHRrlQ.jpeg)
+</script></section><section  data-markdown><script type="text/template">
+* Stuff that has to happen at a exact specific later time
+
+![Tick tock](ticktock.png)
+</script></section><section  data-markdown><script type="text/template">
+* Stuff that just has to happen sometime later
+
+![Do it later](https://devblogs.microsoft.com/startups/wp-content/uploads/sites/66/2020/10/image1.jpg)
+</script></section><section  data-markdown><script type="text/template">
+## What about features/requirements?
+
+- Monitoring
+- Error handling
+- Accuracy/latency
+- Ordering
+- Complexity
+- Cost
+- Configuration for a specific use-case
+- Code sharing / application organisation
+- Scaling
+
+<aside class="notes"><p>What requirements might we have?</p>
+<ul>
+<li><p>Monitoring:</p>
+<ul>
+<li>How many jobs are in the queue?</li>
+<li>Is the system crashing?</li>
+<li>How long is it taking for background tasks to complete?</li>
+<li>What happens to records of work items once they&#39;ve been processed?</li>
+</ul>
+</li>
+<li><p>Error handling:</p>
+<ul>
+<li>What happens if there are too many jobs?</li>
+<li>What happens if the system crashes while processing a job?</li>
+<li>What if the network goes down or a HD dies?</li>
+</ul>
+</li>
+<li><p>Accuracy/latency:</p>
+<ul>
+<li>If I schedule a job to run at 10AM, does it run at exactly 10AM?</li>
+<li>If I request a job to run immediately, how long does it take to start running?</li>
+</ul>
+</li>
+<li><p>Ordering:</p>
+<ul>
+<li>Do I care about job execution ordering?</li>
+</ul>
+</li>
+<li><p>Complexity:</p>
+<ul>
+<li>How complex is it to implement/use the system?</li>
+<li>Can the system adapt to my needs?</li>
+</ul>
+</li>
+<li><p>Cost:</p>
+<ul>
+<li>Is there an up front cost? (time, money)</li>
+<li>Is there an operational cost? (time, money)</li>
+<li>What&#39;s the trade-off between these am I willing to accept?</li>
+</ul>
+</li>
+</ul>
+</aside></script></section><section  data-markdown><script type="text/template">
+### Common pattern: Message queues
+
+![Message queue](https://stiller.blog/wp-content/uploads/2020/02/RabbitMQ-vs-Kafka-Message-Queuing.svg)
+
+<aside class="notes"><p>Producers place work items onto a shared queue then they can go back to whatever they need to do.
+Eventually, a worker (&quot;Consumer&quot;) will remove the work item from the queue and process it.</p>
+</aside></script></section><section  data-markdown><script type="text/template">
+## Common pattern: Pub/Sub
+
+![PubSub](https://stiller.blog/wp-content/uploads/2020/02/RabbitMQ-vs-Kafka-PubSub.svg)
+
+<aside class="notes"><p>Similar to a message queue but a single message can be processed by multiple workers (&quot;Consumers&quot;).</p>
+</aside></script></section><section  data-markdown><script type="text/template"><!-- .slide: data-background="https://www.allwhitebackground.com/wp-content/uploads/5/Nature.jpg" -->
+# A tour of the slopes
+</script></section><section  data-markdown><script type="text/template">
+# DIY
+
+![DIY](https://www.theonering.com/wp-content/uploads/2020/11/pippinmerry011128a.jpg)
+
+<aside class="notes"><ul>
+<li><p>Example:</p>
+<ol>
+<li>Create a data structure to represent a queue, maybe protected by a mutex</li>
+<li>Spawn N threads to read from the queue</li>
+<li>Application exclusively write into the queue</li>
+<li>Worker threads vie to work on tasks in the queue</li>
+</ol>
+</li>
+<li><p>Good:</p>
+<ul>
+<li>Full control over semantics and features</li>
+</ul>
+</li>
+<li><p>Bad:</p>
+<ul>
+<li>Developer responsible for quality and features of a whole system</li>
+</ul>
+</li>
+</ul>
+</aside></script></section><section  data-markdown><script type="text/template">
+# CRON
+
+![Cron](https://cdn-images-1.medium.com/max/1200/1*ct0QEPfiUl5PG7_Q_gpe_w.png)
+
+<aside class="notes"><ul>
+<li><p>Example:</p>
+<ul>
+<li>Application puts tasks in a database with a timestamp</li>
+<li>CRON job reads tasks since last run and executes each one</li>
+<li>possibly inserts results back into another database table</li>
+</ul>
+</li>
+<li><p>Good:</p>
+<ul>
+<li>Runs stuff at a set time or on a schedule</li>
+<li>Run stuff later</li>
+<li>Well understood and supported</li>
+</ul>
+</li>
+<li><p>Bad:</p>
+<ul>
+<li>1 minute resulution</li>
+<li>Error handling</li>
+<li>Monitoring</li>
+<li>Configuration and execution out of the application</li>
+<li>Blocking (if your work runs for longer than the schedule you have a problem)</li>
+</ul>
+</li>
+</ul>
+</aside></script></section><section  data-markdown><script type="text/template">
+# Postgres LISTEN/NOTIFY
+
+![Postgres](http://sql.sh/wp-content/uploads/2012/12/logo-postgresql-elephant.png)
+
+<aside class="notes"><ul>
+<li><p>Example:</p>
+<ul>
+<li>Application inserts tasks into a datbase table</li>
+<li>Task executor listens for changes to the table
+and executes tasks as they&#39;re inserted</li>
+</ul>
+</li>
+<li><p>Good:</p>
+<ul>
+<li>Executes tasks as they&#39;re inserted into the task table (immediate execution)</li>
+<li>Directly tied to data</li>
+</ul>
+</li>
+<li><p>Bad:</p>
+<ul>
+<li>Only Postgres</li>
+<li>Have to write seperate task executor</li>
+<li>No monitoring (or ad-hoc monitoring)</li>
+<li>Error handling</li>
+</ul>
+</li>
+</ul>
+</aside></script></section><section  data-markdown><script type="text/template">
+# Redis Messaging
+
+![Redis](http://thenewstack.io/wp-content/uploads/2015/03/redis-logo.png)
+
+<aside class="notes"><p>Same as for Postgres</p>
+</aside></script></section><section  data-markdown><script type="text/template">
+# Message queues
+#### or
+# Event streaming
+
+![Celery](http://www.pngmart.com/files/5/Celery-PNG-Clipart.png)
+
+<aside class="notes"><ul>
+<li><p>Good:</p>
+<ul>
+<li>Purpose designed to run background tasks</li>
+<li>Monitoring and error handling built-in</li>
+<li>Task executor is a seperate process</li>
+<li>Control over task semantics: schedule, ordering, complexity, etc.</li>
+</ul>
+</li>
+<li><p>Bad:</p>
+<ul>
+<li>Have to run/manage the message queue system</li>
+<li>Configuration</li>
+<li>Some more appropriate for certain tasks than others (no 1 size fits all)</li>
+<li>Executor is a seperate application (though can share source which requires careful project organisation)</li>
+</ul>
+</li>
+<li><p>Examples:</p>
+<ul>
+<li>RabbitMQ</li>
+<li>ZeroMQ | NanoMsg</li>
+<li>Celery</li>
+<li>ActiveMQ</li>
+<li>Apache Kafka</li>
+<li>Beanstalk (demo)</li>
+</ul>
+</li>
+</ul>
+<ul>
+<li><a href="https://kafka.apache.org/intro">https://kafka.apache.org/intro</a></li>
+<li><a href="https://stiller.blog/2020/02/rabbitmq-vs-kafka-an-architects-dilemma-part-1/">https://stiller.blog/2020/02/rabbitmq-vs-kafka-an-architects-dilemma-part-1/</a></li>
+</ul>
+</aside></script></section><section  data-markdown><script type="text/template">
+# Framework provisions
+
+![Elixir](https://www.alwaysdata.com/static/img/technologies/languages/elixir.png)
+
+<aside class="notes"><ul>
+<li><p>Good:</p>
+<ul>
+<li>Built into your language or application framework</li>
+<li>Often give you the semantics you need from a message queue</li>
+<li>Share application code</li>
+<li>Monitoring and error handling built-in</li>
+</ul>
+</li>
+<li><p>Bad:</p>
+<ul>
+<li>Sometimes require an extra dependency (needs to be kept up-to-date; may not play well with chosen framework)</li>
+<li>May just be a convenient API to one of the previous discussed systems (so comes with the baggage too)</li>
+</ul>
+</li>
+<li><p>Examples:</p>
+<ul>
+<li>Elixir <code>GenServer</code></li>
+<li>Java/Spring <code>@Scheduled</code></li>
+<li>Python/FastAPI <code>BackgroundTasks</code></li>
+<li>Ruby/Rails <code>SideKiq</code>, <code>delayed_job</code>, ...</li>
+<li>Haskell <code>OddJobs</code>, <code>hworker</code>, <code>jobqueue</code>, ...</li>
+<li>PHP/Laravel <code>Queues</code></li>
+<li>NodeJS/Ember <code>Ember.run.schedule</code>, <code>Ember.run.later</code></li>
+<li>Rust/Tokio <code>Channel</code></li>
+</ul>
+</li>
+<li><p>Links:</p>
+<ul>
+<li><a href="https://www.haskelltutorials.com/odd-jobs/haskell-job-queues-ultimate-guide.html">https://www.haskelltutorials.com/odd-jobs/haskell-job-queues-ultimate-guide.html</a></li>
+<li><a href="https://fastapi.tiangolo.com/tutorial/background-tasks/">https://fastapi.tiangolo.com/tutorial/background-tasks/</a></li>
+</ul>
+</li>
+</ul>
+</aside></script></section><section  data-markdown><script type="text/template">
+# SaaS / MaaS
+
+<iframe src="https://giphy.com/embed/cPSeb8U6cjALDo0GGL" width="480" height="480" frameBorder="0" class="giphy-embed" allowFullScreen></iframe>
+
+<aside class="notes"><ul>
+<li><p>Good:</p>
+<ul>
+<li>No need to manage any of the task management or queing ourselves</li>
+<li>Built-in monitoring and error handling as well as scaling</li>
+<li>All useful semantics from a message queue</li>
+</ul>
+</li>
+<li><p>Bad:</p>
+<ul>
+<li>Expensive up front</li>
+<li>Requires internet access</li>
+<li>Internet latency and unreliability</li>
+<li>Give commercial access to our data</li>
+<li>Set up workers on SaaS is seperate from a single deploy</li>
+<li>Seperate monitoring and error handling</li>
+<li>Requires authentication (seperate concern from scheduling a background task)</li>
+<li>Tied to a SaaS task queue provider</li>
+<li>May not be a good fit for the specific use-case</li>
+</ul>
+</li>
+<li><p>Examples:</p>
+<ul>
+<li>Amazon Simple Queue Service</li>
+<li>Azure Service Bus</li>
+<li>Ralley</li>
+</ul>
+</li>
+</ul>
+<ul>
+<li><a href="https://en.wikipedia.org/wiki/Fallacies_of_distributed_computing">https://en.wikipedia.org/wiki/Fallacies_of_distributed_computing</a></li>
+</ul>
+</aside></script></section><section  data-markdown><script type="text/template">
+# PaaS
+
+<iframe src="https://giphy.com/embed/1hMjFZY16VxGWrfDfq" width="480" height="270" frameBorder="0" class="giphy-embed" allowFullScreen></iframe>
+
+<aside class="notes"><ul>
+<li><p>Good:</p>
+<ul>
+<li>Dont have to run/manage the task queue system</li>
+<li>Built-in monitoring, error handling, scaling</li>
+<li>All useful semantics from a message queue</li>
+<li>Minimal latency</li>
+<li>Access to all the compute power anyone might need (for a price)</li>
+</ul>
+</li>
+<li><p>Bad:</p>
+<ul>
+<li>Expensive up front</li>
+<li>Tied to a cloud provider</li>
+<li>May not be a good fit for the specific use-case</li>
+</ul>
+</li>
+<li><p>Examples:</p>
+<ul>
+<li>AWS Kinesis Data / AWS Elastic Beanstalk</li>
+<li>Heroku Worker Dynos</li>
+<li>Azure Event Hubs / Azure Batch</li>
+<li>Google Cloud Tasks</li>
+<li>...</li>
+</ul>
+</li>
+</ul>
+<ul>
+<li><a href="https://devcenter.heroku.com/articles/background-jobs-queueing">https://devcenter.heroku.com/articles/background-jobs-queueing</a></li>
+</ul>
+</aside></script></section><section  data-markdown><script type="text/template">
+## "The Cloud" has a problem
+
+#### Let a politician explain...
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/PBaZAcBWwik?start=28" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+</script></section><section  data-markdown><script type="text/template">
+# Sun Grid Engine
+
+<iframe src="https://giphy.com/embed/l0Iympgkss7fnFvDa" width="480" height="240" frameBorder="0" class="giphy-embed" allowFullScreen></iframe>
+
+<aside class="notes"><p>Now called Oracle Grid Engine, Son of Grid Engine, Open Grid Scheduler, Univa Grid Engine.</p>
+<p>You&#39;ve probably noticed that I havn&#39;t mentioned SGE yet. That&#39;s because it&#39;s purpose
+is related but tangiential to this topic. The key is the word &quot;grid&quot;: SGE schedules and
+dispatches jobs onto a distributed computer. We <em>may</em> want that behaviour from our
+background tasks but it should be abstracted from such a system.</p>
+</aside></script></section><section  data-markdown><script type="text/template">
+<iframe src="https://giphy.com/embed/d2eNXDl6ZkpOIqfhG6" width="480" height="264" frameBorder="0" class="giphy-embed" allowFullScreen></iframe>
+</script></section><section  data-markdown><script type="text/template">
+![This mountain](Here.png)
+</script></section></div>
+    </div>
+
+    <script src="./dist/reveal.js"></script>
+
+    <script src="./plugin/markdown/markdown.js"></script>
+    <script src="./plugin/highlight/highlight.js"></script>
+    <script src="./plugin/zoom/zoom.js"></script>
+    <script src="./plugin/notes/notes.js"></script>
+    <script src="./plugin/math/math.js"></script>
+    <script>
+      function extend() {
+        var target = {};
+        for (var i = 0; i < arguments.length; i++) {
+          var source = arguments[i];
+          for (var key in source) {
+            if (source.hasOwnProperty(key)) {
+              target[key] = source[key];
+            }
+          }
+        }
+        return target;
+      }
+
+      // default options to init reveal.js
+      var defaultOptions = {
+        controls: true,
+        progress: true,
+        history: true,
+        center: true,
+        transition: 'default', // none/fade/slide/convex/concave/zoom
+        plugins: [
+          RevealMarkdown,
+          RevealHighlight,
+          RevealZoom,
+          RevealNotes,
+          RevealMath
+        ]
+      };
+
+      // options from URL query string
+      var queryOptions = Reveal().getQueryHash() || {};
+
+      var options = extend(defaultOptions, {}, queryOptions);
+    </script>
+
+
+    <script>
+      Reveal.initialize(options);
+    </script>
+  </body>
+</html>
